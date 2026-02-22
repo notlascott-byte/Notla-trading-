@@ -1,0 +1,960 @@
+import { useState, useEffect, useRef } from "react";
+
+// ─── COSMIC CALCULATIONS ────────────────────────────────────────────────────
+function getMoonPhase() {
+  const now = new Date();
+  const known = new Date("2000-01-06T18:14:00Z");
+  const cycle = 29.530588853;
+  const diff = (now - known) / (1000 * 60 * 60 * 24);
+  const phase = ((diff % cycle) + cycle) % cycle;
+  const pct = (phase / cycle) * 100;
+  if (pct < 3)   return { name:"New Moon",       emoji:"🌑", energy:"NEW BEGINNINGS", bias:"Volatile. Avoid new entries.",      advice:"Wait for direction. New cycle beginning.",  color:"#818cf8", ill:0,   favorable:false };
+  if (pct < 25)  return { name:"Waxing Crescent", emoji:"🌒", energy:"GROWTH",        bias:"Bullish momentum building.",         advice:"Favor BUY setups. Moon energy rising.",     color:"#a78bfa", ill:25,  favorable:true  };
+  if (pct < 27)  return { name:"First Quarter",   emoji:"🌓", energy:"ACTION",        bias:"Breakouts forming.",                 advice:"Watch for breakouts. High energy.",         color:"#c084fc", ill:50,  favorable:true  };
+  if (pct < 50)  return { name:"Waxing Gibbous",  emoji:"🌔", energy:"PEAK BUILD",   bias:"Strong bullish pressure.",           advice:"Best for BUY trades. Energy peaking.",      color:"#e879f9", ill:75,  favorable:true  };
+  if (pct < 53)  return { name:"Full Moon",       emoji:"🌕", energy:"PEAK POWER",   bias:"EXTREME volatility. Major reversals.",advice:"Tight SL only. Reversals very likely.",    color:"#fef08a", ill:100, favorable:false };
+  if (pct < 75)  return { name:"Waning Gibbous",  emoji:"🌖", energy:"RELEASING",    bias:"Bearish pressure building.",         advice:"Favor SELL setups. Energy falling.",        color:"#fbbf24", ill:65,  favorable:true  };
+  if (pct < 78)  return { name:"Last Quarter",    emoji:"🌗", energy:"REFLECTION",   bias:"Consolidation. Reversal zone.",      advice:"Close trades. Reflect. Wait.",             color:"#f97316", ill:50,  favorable:false };
+  return               { name:"Waning Crescent",  emoji:"🌘", energy:"COMPLETION",   bias:"Bearish. Cycle ending.",             advice:"Close positions. Prepare for reset.",       color:"#ef4444", ill:15,  favorable:false };
+}
+
+function getZodiac() {
+  const d = new Date(); const m = d.getMonth()+1; const day = d.getDate();
+  const z = [
+    {name:"Aries",      e:"♈",planet:"Mars",   el:"Fire", effect:"Aggressive breakouts. Sharp impulse candles. High energy.",     pairs:["EUR/USD","GBP/USD","US30"],       bull:true },
+    {name:"Taurus",     e:"♉",planet:"Venus",  el:"Earth",effect:"Stable slow trends. Gold & commodities favored.",               pairs:["XAU/USD","USD/CHF","AUD/USD"],    bull:true },
+    {name:"Gemini",     e:"♊",planet:"Mercury",el:"Air",  effect:"Choppy indecisive markets. Range-bound. Quick reversals.",      pairs:["EUR/GBP","NZD/USD"],             bull:false},
+    {name:"Cancer",     e:"♋",planet:"Moon",   el:"Water",effect:"Emotional news-driven moves. Safe havens dominate.",           pairs:["USD/JPY","XAU/USD","USD/CHF"],    bull:false},
+    {name:"Leo",        e:"♌",planet:"Sun",    el:"Fire", effect:"Confident bullish energy. Stocks surge. Risk-on dominates.",   pairs:["NAS100","SPX500","BTC/USD"],      bull:true },
+    {name:"Virgo",      e:"♍",planet:"Mercury",el:"Earth",effect:"Data-driven. Economic releases move price strongly.",          pairs:["EUR/USD","USD/CAD","GBP/USD"],    bull:true },
+    {name:"Libra",      e:"♎",planet:"Venus",  el:"Air",  effect:"Balanced markets. Currencies find equilibrium.",              pairs:["EUR/USD","EUR/GBP","XAG/USD"],    bull:true },
+    {name:"Scorpio",    e:"♏",planet:"Pluto",  el:"Water",effect:"Deep intense hidden reversals. Crypto volatile.",             pairs:["BTC/USD","ETH/USD","USD/JPY"],    bull:false},
+    {name:"Sagittarius",e:"♐",planet:"Jupiter",el:"Fire", effect:"Expansive optimism. Markets push higher. Momentum plays.",    pairs:["GBP/USD","EUR/USD","NAS100"],     bull:true },
+    {name:"Capricorn",  e:"♑",planet:"Saturn", el:"Earth",effect:"Disciplined institutional moves. Strong clear trends.",       pairs:["US30","SPX500","USD/CAD"],        bull:true },
+    {name:"Aquarius",   e:"♒",planet:"Uranus", el:"Air",  effect:"Sudden reversals. Tech & crypto unpredictable.",              pairs:["BTC/USD","NAS100","ETH/USD"],     bull:false},
+    {name:"Pisces",     e:"♓",planet:"Neptune",el:"Water",effect:"Foggy unclear direction. False breakouts common.",            pairs:["EUR/USD","GBP/JPY","XAU/USD"],    bull:false},
+  ];
+  const ranges=[[3,21],[4,20],[5,21],[6,21],[7,23],[8,23],[9,23],[10,23],[11,22],[12,22],[1,20],[2,19]];
+  for(let i=0;i<12;i++){
+    const[sm,sd]=ranges[i];const[em,ed]=ranges[(i+1)%12];
+    if((m===sm&&day>=sd)||(m===em&&day<=ed))return z[i];
+  }
+  return z[0];
+}
+
+function getNumerology() {
+  const d=new Date();
+  let n=(d.getDate()+d.getMonth()+1+(d.getFullYear()%100));
+  while(n>9)n=String(n).split("").reduce((a,b)=>a+parseInt(b),0);
+  const map={
+    1:{name:"New Beginnings",energy:"INITIATION",market:"Strong opening moves. Breakouts favored today.",color:"#f87171",fav:true},
+    2:{name:"Balance",energy:"HARMONY",market:"Forex pairs excellent. Balanced energy today.",color:"#a78bfa",fav:true},
+    3:{name:"Expansion",energy:"GROWTH",market:"Markets surprise to upside. Expansion energy.",color:"#34d399",fav:true},
+    4:{name:"Structure",energy:"STABILITY",market:"Consolidation day. Respect structure. Range trade.",color:"#60a5fa",fav:false},
+    5:{name:"Change",energy:"VOLATILITY",market:"High volatility. Major reversals possible. Caution.",color:"#fbbf24",fav:false},
+    6:{name:"Harmony",energy:"BALANCE",market:"Safe low-risk setups favored. Good for scaling.",color:"#22d3ee",fav:true},
+    7:{name:"Wisdom",energy:"INSIGHT",market:"Technical levels respected strongly today.",color:"#818cf8",fav:true},
+    8:{name:"Abundance",energy:"POWER",market:"Institutional moves. Big trends. Follow the money.",color:"#f59e0b",fav:true},
+    9:{name:"Completion",energy:"ENDINGS",market:"Trend endings. Close profitable trades today.",color:"#fb923c",fav:false},
+  };
+  return{num:n,...(map[n]||map[1])};
+}
+
+function getMercuryRx(){
+  const d=new Date();
+  const doy=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);
+  return[[15,35],[95,115],[175,195],[255,275],[335,355]].some(([s,e])=>doy>=s&&doy<=e);
+}
+
+function getSession(){
+  const h=new Date().getUTCHours();
+  if(h>=13&&h<17)return{name:"London/NY Overlap",vol:"EXTREME",color:"#f87171",best:"EUR/USD, GBP/USD, XAU/USD"};
+  if(h>=8&&h<13) return{name:"London Open",vol:"HIGH",color:"#60a5fa",best:"EUR/USD, GBP/USD, EUR/GBP"};
+  if(h>=17&&h<22)return{name:"New York",vol:"HIGH",color:"#34d399",best:"USD/CAD, EUR/USD, US30"};
+  if(h>=0&&h<9)  return{name:"Tokyo",vol:"MEDIUM",color:"#fbbf24",best:"USD/JPY, AUD/JPY, EUR/JPY"};
+  return{name:"Sydney/Off-Hours",vol:"LOW",color:"#818cf8",best:"AUD/USD, NZD/USD"};
+}
+
+function getCosmicScore(moon,zodiac,num,mercuryRx,session){
+  let s=50;
+  if(moon.ill>20&&moon.ill<80)s+=12;
+  if(moon.ill>=80)s-=12;
+  if(zodiac.bull)s+=10;
+  if(mercuryRx)s-=20;
+  if(num.fav)s+=10;
+  if(session.vol==="EXTREME"||session.vol==="HIGH")s+=8;
+  return Math.min(96,Math.max(15,s));
+}
+
+// ─── CONSTANTS ──────────────────────────────────────────────────────────────
+const PAIRS=["EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD","NZD/USD","USD/CHF","EUR/GBP","GBP/JPY","EUR/JPY","XAU/USD","XAG/USD","BTC/USD","ETH/USD","NAS100","US30","SPX500","US Oil"];
+const TFS=["M15","M30","H1","H4","D1"];
+const TABS=["🔮 Oracle","💬 AI Chat","🌙 Cosmic","📡 Scanner","📓 Journal","⚖️ Calculator"];
+
+// ─── CALL CLAUDE API ────────────────────────────────────────────────────────
+async function callAI(messages,useSearch=true){
+  const body={
+    model:"claude-sonnet-4-20250514",
+    max_tokens:3000,
+    messages,
+  };
+  if(useSearch)body.tools=[{type:"web_search_20250305",name:"web_search"}];
+  const r=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  if(!r.ok)throw new Error(`API error: ${r.status}`);
+  const data=await r.json();
+  return data.content.filter(b=>b.type==="text").map(b=>b.text).join("");
+}
+
+// ─── MAIN APP ────────────────────────────────────────────────────────────────
+export default function CosmicTrader(){
+  const [tab,setTab]=useState(0);
+  const [pair,setPair]=useState("EUR/USD");
+  const [tf,setTf]=useState("H1");
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+  const [error,setError]=useState("");
+
+  // Chat state
+  const [chatHistory,setChatHistory]=useState([]);
+  const [chatInput,setChatInput]=useState("");
+  const [chatLoading,setChatLoading]=useState(false);
+
+  // Scanner
+  const [scanResults,setScanResults]=useState([]);
+  const [scanning,setScanning]=useState(false);
+
+  // Journal
+  const [journal,setJournal]=useState([]);
+  const [showAdd,setShowAdd]=useState(false);
+  const [tradeForm,setTradeForm]=useState({pair:"",direction:"BUY",entry:"",result:"",note:""});
+
+  // Calculator
+  const [calcForm,setCalcForm]=useState({balance:"10000",risk:"1",entry:"",sl:"",tp:""});
+
+  // Time
+  const [time,setTime]=useState(new Date());
+  const chatEndRef=useRef(null);
+  const logRef=useRef(null);
+
+  // Cosmic data
+  const moon=getMoonPhase();
+  const zodiac=getZodiac();
+  const num=getNumerology();
+  const mercuryRx=getMercuryRx();
+  const session=getSession();
+  const cosmicScore=getCosmicScore(moon,zodiac,num,mercuryRx,session);
+
+  useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
+  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[chatHistory]);
+
+  // Load persisted data
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const j=await window.storage?.get("ct_journal");
+        if(j)setJournal(JSON.parse(j.value));
+        const c=await window.storage?.get("ct_chat");
+        if(c)setChatHistory(JSON.parse(c.value));
+      }catch(e){}
+    })();
+  },[]);
+
+  // Save journal
+  const saveJournal=async(updated)=>{
+    setJournal(updated);
+    try{await window.storage?.set("ct_journal",JSON.stringify(updated));}catch(e){}
+  };
+
+  // Save chat
+  const saveChat=async(updated)=>{
+    setChatHistory(updated);
+    try{await window.storage?.set("ct_chat",JSON.stringify(updated.slice(-50)));}catch(e){}
+  };
+
+  // ── ORACLE ANALYSIS ────────────────────────────────────────────────────────
+  const analyze=async()=>{
+    setLoading(true);setResult(null);setError("");
+    const journalContext=journal.length>0
+      ?`\nTRADER JOURNAL HISTORY (${journal.length} trades, win rate ${journal.length>0?Math.round(journal.filter(t=>parseFloat(t.result||0)>0).length/journal.length*100):0}%): ${journal.slice(0,5).map(t=>`${t.pair} ${t.direction} result:${t.result}pips on ${t.moon} moon №${t.number}`).join(" | ")}`
+      :"";
+
+    const prompt=`You are COSMO — the world's most advanced AI trading oracle. You think like a fusion of the best hedge fund analyst, technical trader, fundamental economist AND cosmic astrologer. You search the web for live data then synthesize everything.
+
+CURRENT COSMIC CONDITIONS:
+Moon: ${moon.name} ${moon.emoji} (${moon.ill}% illuminated) — ${moon.bias}
+Sun Sign: ${zodiac.e} ${zodiac.name} ruled by ${zodiac.planet} (${zodiac.el}) — ${zodiac.effect}
+Mercury Retrograde: ${mercuryRx?"YES ⚠️ — distorted signals, fakeouts, confusion":"NO ✓ — clear for trading"}
+Universal Number: ${num.num} (${num.name}) — ${num.market}
+Session: ${session.name} | Volatility: ${session.vol}
+Cosmic Score: ${cosmicScore}/100
+${journalContext}
+
+Search the web for:
+1. Latest breaking news affecting ${pair} RIGHT NOW
+2. Central bank statements/decisions this week
+3. Key economic data released today
+4. Current approximate price of ${pair}
+5. Market sentiment right now
+
+Then return ONLY valid JSON (absolutely no text before { or after }):
+{
+  "price":"current price",
+  "signal":"BUY",
+  "confidence":82,
+  "shouldEnter":true,
+  "entry":"price",
+  "sl":"price",
+  "tp1":"price",
+  "tp2":"price",
+  "tp3":"price",
+  "rr":"1:2.5",
+  "trend":"BULLISH",
+  "pattern":"Bull Flag",
+  "support":"level",
+  "resistance":"level",
+  "technical":"3-4 sentence technical analysis with specific details",
+  "fundamental":"3-4 sentence fundamental analysis citing today's news",
+  "cosmic":"3-4 sentences on how moon phase, ${zodiac.name} energy and number ${num.num} are manifesting in this market",
+  "whyEnter":"combined reasons to enter now",
+  "whyWait":"what to wait for if shouldEnter is false",
+  "confluence":[{"name":"Trend direction clear","pass":true},{"name":"At key level","pass":true},{"name":"Moon favorable","pass":${moon.favorable}},{"name":"Mercury direct","pass":${!mercuryRx}},{"name":"Session active","pass":${session.vol!=="LOW"}},{"name":"Numerology favorable","pass":${num.fav}},{"name":"Zodiac aligned","pass":${zodiac.bull}},{"name":"News catalyst","pass":true},{"name":"Risk:Reward 1:2+","pass":true}],
+  "risks":["specific risk 1","specific risk 2","specific risk 3"],
+  "cosmicWarnings":["any cosmic red flag if applicable"],
+  "bestEntryTime":"optimal time based on session and cosmic energy",
+  "news":[{"headline":"specific headline","impact":"HIGH","effect":"how it affects ${pair}"}],
+  "calendar":[{"time":"HH:MM UTC","event":"name","currency":"XXX","impact":"HIGH"}],
+  "sentiment":"RISK ON",
+  "verdict":"2-3 sentence final oracle verdict combining technical + fundamental + cosmic"
+}`;
+
+    try{
+      const text=await callAI([{role:"user",content:prompt}],true);
+      const match=text.match(/\{[\s\S]*\}/);
+      if(!match)throw new Error("Could not read oracle response. Please try again.");
+      const parsed=JSON.parse(match[0]);
+      setResult(parsed);
+    }catch(e){
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  // ── AI CHAT ────────────────────────────────────────────────────────────────
+  const sendChat=async()=>{
+    if(!chatInput.trim()||chatLoading)return;
+    const userMsg=chatInput.trim();
+    setChatInput("");
+    const newHistory=[...chatHistory,{role:"user",content:userMsg}];
+    saveChat(newHistory);
+    setChatLoading(true);
+
+    const systemContext=`You are COSMO, an elite AI trading assistant and cosmic market oracle. You have deep knowledge of:
+- All financial markets: forex, crypto, stocks, commodities, indices
+- Technical analysis: candlesticks, patterns, indicators, price action, support/resistance
+- Fundamental analysis: central banks, economic data, geopolitics, market sentiment
+- Cosmic influences: moon phases, zodiac signs, planetary positions, numerology, and how they affect markets
+- Risk management: position sizing, stop losses, take profits, psychology
+
+Current cosmic conditions: Moon=${moon.name} ${moon.emoji}, Sun=${zodiac.e}${zodiac.name}, Mercury Rx=${mercuryRx}, Universal Number=${num.num}(${num.name}), Session=${session.name}, Cosmic Score=${cosmicScore}/100.
+
+Trader journal: ${journal.length} trades logged.
+
+You search the web for live prices and news when needed. You give specific, actionable trading advice. You NEVER give generic answers. You always include the cosmic perspective alongside technical/fundamental analysis. You learn from the trader's history and adapt your advice accordingly. Respond concisely but completely.`;
+
+    try{
+      const messages=[
+        {role:"user",content:systemContext+"\n\nConversation history:\n"+chatHistory.slice(-10).map(m=>`${m.role}: ${m.content}`).join("\n")+"\n\nUser: "+userMsg}
+      ];
+      const text=await callAI(messages,true);
+      const updated=[...newHistory,{role:"assistant",content:text}];
+      saveChat(updated);
+    }catch(e){
+      const updated=[...newHistory,{role:"assistant",content:"⚠️ Connection issue. Please try again. Error: "+e.message}];
+      saveChat(updated);
+    }
+    setChatLoading(false);
+  };
+
+  // ── SCANNER ────────────────────────────────────────────────────────────────
+  const scan=async()=>{
+    setScanning(true);setScanResults([]);
+    const targets=["EUR/USD","GBP/USD","USD/JPY","XAU/USD","BTC/USD","NAS100","GBP/JPY","AUD/USD"];
+    const prompt=`You are an elite AI trading scanner. Search the web for current prices and market conditions for these pairs: ${targets.join(", ")}.
+
+Cosmic context: Moon=${moon.name}(${moon.bias}), Sun=${zodiac.name}(${zodiac.effect}), Mercury Rx=${mercuryRx}, Number=${num.num}(${num.market}), Session=${session.name}.
+
+For each pair assess: current price, signal (BUY/SELL/WAIT), confidence 0-100, trend, and whether cosmic conditions are ALIGNED/MISALIGNED/NEUTRAL with the signal.
+
+Return ONLY valid JSON:
+{"results":[{"pair":"EUR/USD","price":"1.0855","signal":"BUY","confidence":78,"trend":"BULLISH","cosmic":"ALIGNED","reason":"one sentence why including cosmic factor"}]}`;
+    try{
+      const text=await callAI([{role:"user",content:prompt}],true);
+      const match=text.match(/\{[\s\S]*\}/);
+      if(match)setScanResults(JSON.parse(match[0]).results||[]);
+    }catch(e){}
+    setScanning(false);
+  };
+
+  // ── CALCULATOR ─────────────────────────────────────────────────────────────
+  const calcPos=()=>{
+    const{balance:b,risk:r,entry:e,sl:s,tp:t}=calcForm;
+    const B=parseFloat(b),R=parseFloat(r),E=parseFloat(e),S=parseFloat(s),T=parseFloat(t);
+    if(!B||!R||!E||!S)return null;
+    const riskAmt=B*R/100,slDist=Math.abs(E-S);
+    return{
+      riskAmt:riskAmt.toFixed(2),
+      slDist:slDist.toFixed(5),
+      lots:slDist>0?(riskAmt/(slDist*10)).toFixed(2):"—",
+      rr:T&&slDist?(Math.abs(T-E)/slDist).toFixed(2):"—",
+      potentialProfit:T&&slDist?((Math.abs(T-E)/slDist)*riskAmt).toFixed(2):"—"
+    };
+  };
+  const pos=calcPos();
+  const wins=journal.filter(t=>parseFloat(t.result||0)>0).length;
+  const wr=journal.length>0?Math.round(wins/journal.length*100):0;
+
+  // ── COLORS / THEME ─────────────────────────────────────────────────────────
+  const BG="#06040f",SURF="#0d0b1a",BRD="#1a1730",
+    ACC="#b197fc",GLD="#fbbf24",GRN="#34d399",RED="#f87171",MUT="#5c5980";
+  const sc=s=>s==="BUY"||s==="BULLISH"?GRN:s==="SELL"||s==="BEARISH"?RED:GLD;
+
+  const Pill=({label,color=ACC,bg})=>(
+    <span style={{background:bg||color+"18",border:`1px solid ${color}44`,color,fontSize:9,fontFamily:"'JetBrains Mono',monospace",padding:"2px 8px",borderRadius:4,letterSpacing:1,whiteSpace:"nowrap"}}>{label}</span>
+  );
+
+  const Card=({children,style={}})=>(
+    <div style={{background:SURF,border:`1px solid ${BRD}`,borderRadius:12,padding:"18px 20px",...style}}>{children}</div>
+  );
+
+  const Inp=({label,k,ph,type="text",state,setState})=>(
+    <div>
+      <div style={{fontSize:8,color:MUT,fontFamily:"monospace",letterSpacing:1,marginBottom:4}}>{label}</div>
+      <input type={type} placeholder={ph} value={state[k]} onChange={e=>setState(p=>({...p,[k]:e.target.value}))}
+        style={{background:BG,border:`1px solid ${BRD}`,borderRadius:6,padding:"8px 10px",fontSize:11,width:"100%",color:"#e2e0ff",fontFamily:"monospace",outline:"none"}}/>
+    </div>
+  );
+
+  const Btn=({children,onClick,disabled,color="linear-gradient(135deg,#7c3aed,#a855f7)",style={}})=>(
+    <button onClick={onClick} disabled={disabled}
+      style={{background:disabled?"#1a1730":color,border:"none",color:disabled?MUT:"#fff",padding:"9px 20px",borderRadius:8,fontFamily:"'Cinzel',serif",fontSize:11,letterSpacing:2,cursor:disabled?"not-allowed":"pointer",boxShadow:disabled?"none":`0 0 18px rgba(139,92,246,0.3)`,transition:"all 0.15s",...style}}>
+      {children}
+    </button>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:BG,color:"#e2e0ff",fontFamily:"'JetBrains Mono',monospace",overflowX:"hidden"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=JetBrains+Mono:wght@300;400;600;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        ::-webkit-scrollbar{width:3px;height:3px;}
+        ::-webkit-scrollbar-track{background:${BG};}
+        ::-webkit-scrollbar-thumb{background:#2a2445;border-radius:2px;}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+        @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+        @keyframes shimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes twinkle{0%,100%{opacity:.15}50%{opacity:.7}}
+        .float{animation:float 4s ease-in-out infinite;}
+        .up{animation:up 0.35s ease forwards;}
+        .pulse{animation:pulse 2s infinite;}
+        select option{background:${BG};color:#e2e0ff;}
+        input,textarea,select{outline:none;}
+        button{cursor:pointer;}
+        button:not(:disabled):hover{opacity:0.88;transform:translateY(-1px);}
+        button{transition:all 0.15s;}
+        textarea:focus,input:focus{border-color:${ACC}44!important;}
+      `}</style>
+
+      {/* Stars */}
+      <div aria-hidden style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>
+        {Array.from({length:55},(_,i)=>(
+          <div key={i} style={{position:"absolute",width:i%9===0?2:1,height:i%9===0?2:1,borderRadius:"50%",background:i%3===0?"#a78bfa":i%3===1?"#fbbf24":"#e2e0ff",left:`${(i*137.508)%100}%`,top:`${(i*85.412)%100}%`,animation:`twinkle ${2+(i%4)*0.5}s ease-in-out ${(i*0.2)%3}s infinite`}}/>
+        ))}
+        <div style={{position:"fixed",top:"10%",left:"0",width:"40%",height:"40%",background:"radial-gradient(ellipse,rgba(124,58,237,0.04) 0%,transparent 70%)",pointerEvents:"none"}}/>
+        <div style={{position:"fixed",bottom:"15%",right:"0",width:"35%",height:"35%",background:"radial-gradient(ellipse,rgba(251,191,36,0.03) 0%,transparent 70%)",pointerEvents:"none"}}/>
+      </div>
+
+      {/* ── HEADER ── */}
+      <header style={{position:"sticky",top:0,zIndex:200,background:`${SURF}ee`,backdropFilter:"blur(20px)",borderBottom:`1px solid ${BRD}`,padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div className="float" style={{fontSize:22}}>{moon.emoji}</div>
+          <div>
+            <div style={{fontFamily:"Cinzel",fontSize:17,fontWeight:900,background:"linear-gradient(120deg,#b197fc,#fbbf24,#a78bfa)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundSize:"200%",animation:"shimmer 5s linear infinite",letterSpacing:3}}>COSMO</div>
+            <div style={{fontSize:7,color:MUT,letterSpacing:3}}>AI COSMIC TRADING ORACLE</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          {[{t:`${moon.emoji} ${moon.name}`,c:moon.color},{t:`${zodiac.e} ${zodiac.name}`,c:GLD},{t:`№${num.num} ${num.name}`,c:num.color},{t:session.name,c:session.color}].map(x=>(
+            <div key={x.t} style={{background:`${x.c}11`,border:`1px solid ${x.c}30`,borderRadius:5,padding:"3px 8px",fontSize:8,color:x.c,fontFamily:"Cinzel"}}>{x.t}</div>
+          ))}
+          {mercuryRx&&<div className="pulse" style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:5,padding:"3px 8px",fontSize:8,color:RED,fontFamily:"Cinzel"}}>☿ MERCURY Rx</div>}
+          <div style={{background:SURF,border:`1px solid ${BRD}`,borderRadius:7,padding:"5px 10px",textAlign:"center"}}>
+            <div style={{fontSize:7,color:MUT}}>COSMIC</div>
+            <div style={{fontFamily:"Cinzel",fontSize:15,fontWeight:700,color:cosmicScore>=70?GRN:cosmicScore>=50?GLD:RED}}>{cosmicScore}%</div>
+          </div>
+        </div>
+      </header>
+
+      {/* ── TABS ── */}
+      <nav style={{display:"flex",gap:4,padding:"10px 16px",borderBottom:`1px solid ${BRD}`,background:`${BG}f0`,position:"sticky",top:61,zIndex:199,overflowX:"auto"}}>
+        {TABS.map((t,i)=>(
+          <button key={i} onClick={()=>setTab(i)}
+            style={{background:tab===i?"rgba(177,151,252,0.12)":"transparent",border:`1px solid ${tab===i?ACC+"55":BRD}`,color:tab===i?ACC:MUT,padding:"7px 14px",borderRadius:7,fontFamily:"Cinzel",fontSize:9,letterSpacing:1,whiteSpace:"nowrap",boxShadow:tab===i?`0 0 10px rgba(177,151,252,0.1)`:"none"}}>
+            {t}
+          </button>
+        ))}
+      </nav>
+
+      <main style={{position:"relative",zIndex:5,padding:"16px",maxWidth:1200,margin:"0 auto"}}>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB 0 — ORACLE
+        ═══════════════════════════════════════════════════════════════════ */}
+        {tab===0&&(
+          <div className="up">
+            {/* Controls */}
+            <Card style={{marginBottom:14,display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div>
+                <div style={{fontSize:8,color:MUT,letterSpacing:2,marginBottom:5,fontFamily:"Cinzel"}}>INSTRUMENT</div>
+                <select value={pair} onChange={e=>setPair(e.target.value)}
+                  style={{background:BG,border:`1px solid ${BRD}`,color:ACC,padding:"8px 12px",borderRadius:6,fontFamily:"monospace",fontSize:12,fontWeight:700,cursor:"pointer",minWidth:150}}>
+                  {PAIRS.map(p=><option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:8,color:MUT,letterSpacing:2,marginBottom:5,fontFamily:"Cinzel"}}>TIMEFRAME</div>
+                <div style={{display:"flex",gap:5}}>
+                  {TFS.map(t=>(
+                    <button key={t} onClick={()=>setTf(t)}
+                      style={{background:tf===t?"rgba(177,151,252,0.14)":BG,border:`1px solid ${tf===t?ACC+"55":BRD}`,color:tf===t?ACC:MUT,padding:"8px 10px",borderRadius:6,fontSize:10,fontFamily:"monospace"}}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <Btn onClick={analyze} disabled={loading}>
+                {loading
+                  ?<span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:10,height:10,border:`2px solid #444`,borderTop:`2px solid ${ACC}`,borderRadius:"50%",display:"inline-block",animation:"spin 0.6s linear infinite"}}/>READING THE COSMOS...</span>
+                  :"✦ CONSULT COSMO"}
+              </Btn>
+              {error&&<div style={{color:RED,fontSize:10,maxWidth:300}}>{error}</div>}
+            </Card>
+
+            {/* Results */}
+            {result&&(
+              <div style={{display:"flex",flexDirection:"column",gap:12}} className="up">
+
+                {/* Row 1: Signal | Levels | Confluence */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+
+                  <Card style={{textAlign:"center",border:`1px solid ${sc(result.signal)}33`,boxShadow:`0 4px 30px ${sc(result.signal)}0a`}}>
+                    <div style={{fontSize:8,color:MUT,letterSpacing:3,marginBottom:8,fontFamily:"Cinzel"}}>COSMO SIGNAL</div>
+                    <div style={{fontFamily:"Cinzel",fontSize:42,fontWeight:900,color:sc(result.signal),textShadow:`0 0 20px ${sc(result.signal)}66`,lineHeight:1}}>{result.signal}</div>
+                    <div style={{fontSize:9,color:MUT,margin:"5px 0"}}>{pair} · {tf} · ~{result.price}</div>
+                    <div style={{height:3,background:BRD,borderRadius:2,marginBottom:5}}>
+                      <div style={{height:"100%",width:`${result.confidence}%`,background:sc(result.signal),borderRadius:2,transition:"width 1s ease"}}/>
+                    </div>
+                    <div style={{fontSize:9,color:sc(result.signal),fontFamily:"Cinzel",marginBottom:10}}>CONFIDENCE {result.confidence}%</div>
+                    <div style={{padding:"8px",background:`${result.shouldEnter?GRN:RED}0d`,border:`1px solid ${result.shouldEnter?GRN:RED}30`,borderRadius:7}}>
+                      <div style={{fontFamily:"Cinzel",fontSize:11,color:result.shouldEnter?GRN:RED,fontWeight:700}}>
+                        {result.shouldEnter?"✦ ENTER TRADE":"✧ STAND ASIDE"}
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card>
+                    <div style={{fontSize:8,color:MUT,letterSpacing:3,marginBottom:12,fontFamily:"Cinzel"}}>SACRED LEVELS</div>
+                    <div style={{fontSize:10,color:MUT,marginBottom:10}}>Price: <span style={{color:ACC,fontWeight:700}}>{result.price}</span></div>
+                    {[{l:"ENTRY",v:result.entry,c:ACC},{l:"STOP LOSS",v:result.sl,c:RED},{l:"TP 1",v:result.tp1,c:"#6ee7b7"},{l:"TP 2",v:result.tp2,c:GRN},{l:"TP 3",v:result.tp3,c:"#059669"}].map(({l,v,c})=>(
+                      <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${BRD}`}}>
+                        <span style={{fontSize:8,color:MUT,letterSpacing:1}}>{l}</span>
+                        <span style={{fontFamily:"Cinzel",fontSize:12,fontWeight:700,color:c}}>{v||"—"}</span>
+                      </div>
+                    ))}
+                    <div style={{display:"flex",justifyContent:"space-between",paddingTop:7}}>
+                      <span style={{fontSize:8,color:MUT}}>RISK:REWARD</span>
+                      <span style={{fontFamily:"Cinzel",fontSize:14,color:GLD,fontWeight:700}}>{result.rr}</span>
+                    </div>
+                  </Card>
+
+                  <Card>
+                    <div style={{fontSize:8,color:MUT,letterSpacing:3,marginBottom:10,fontFamily:"Cinzel"}}>CONFLUENCE</div>
+                    <div style={{fontFamily:"Cinzel",fontSize:34,fontWeight:900,color:result.confidence>=70?GRN:result.confidence>=50?GLD:RED}}>{result.confidence}%</div>
+                    <div style={{height:3,background:BRD,borderRadius:2,margin:"8px 0 12px"}}>
+                      <div style={{height:"100%",width:`${result.confidence}%`,background:result.confidence>=70?GRN:result.confidence>=50?GLD:RED,borderRadius:2,boxShadow:`0 0 6px ${GRN}44`}}/>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {(result.confluence||[]).map((f,i)=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:7,fontSize:10}}>
+                          <span style={{color:f.pass?GRN:"#2a2445",fontSize:11}}>{f.pass?"✦":"○"}</span>
+                          <span style={{color:f.pass?"#e2e0ff":MUT}}>{f.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+
+                {/* Row 2: Analysis */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+                  {[
+                    {title:"📊 TECHNICAL",text:result.technical,sub:`${result.pattern||""} | S:${result.support} R:${result.resistance}`,color:"#60a5fa"},
+                    {title:"📰 FUNDAMENTAL",text:result.fundamental,sub:`Sentiment: ${result.sentiment}`,color:GRN},
+                    {title:"🔮 COSMIC",text:result.cosmic,sub:`${moon.name} | ${zodiac.name} | №${num.num}`,color:ACC},
+                  ].map(({title,text,sub,color})=>(
+                    <Card key={title}>
+                      <div style={{fontFamily:"Cinzel",fontSize:9,color,letterSpacing:2,marginBottom:9}}>{title}</div>
+                      <div style={{fontSize:11,color:"#c4c0e0",lineHeight:1.7,marginBottom:9}}>{text}</div>
+                      <div style={{fontSize:9,color:MUT,borderTop:`1px solid ${BRD}`,paddingTop:7}}>{sub}</div>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Row 3: Why + Risks */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <Card style={{background:result.shouldEnter?"rgba(52,211,153,0.04)":"rgba(248,113,113,0.04)",border:`1px solid ${result.shouldEnter?GRN:RED}22`}}>
+                    <div style={{fontFamily:"Cinzel",fontSize:9,color:result.shouldEnter?GRN:RED,letterSpacing:2,marginBottom:9}}>
+                      {result.shouldEnter?"✦ WHY TO ENTER":"✧ WHY TO WAIT"}
+                    </div>
+                    <div style={{fontSize:11,color:"#c4c0e0",lineHeight:1.7}}>{result.shouldEnter?result.whyEnter:result.whyWait}</div>
+                    {result.bestEntryTime&&<div style={{marginTop:9,fontSize:10,color:GLD,borderTop:`1px solid ${BRD}`,paddingTop:7}}>⏰ {result.bestEntryTime}</div>}
+                  </Card>
+                  <Card>
+                    <div style={{fontFamily:"Cinzel",fontSize:9,color:RED,letterSpacing:2,marginBottom:9}}>⚠ WARNINGS</div>
+                    {(result.risks||[]).map((w,i)=><div key={i} style={{fontSize:11,color:"#c4c0e0",lineHeight:1.6,paddingLeft:10,borderLeft:`2px solid ${RED}33`,marginBottom:7}}>{w}</div>)}
+                    {(result.cosmicWarnings||[]).filter(w=>w).map((w,i)=><div key={i} style={{fontSize:11,color:ACC,lineHeight:1.6,paddingLeft:10,borderLeft:`2px solid ${ACC}33`,marginBottom:6}}>✦ {w}</div>)}
+                  </Card>
+                </div>
+
+                {/* Row 4: News + Calendar */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <Card>
+                    <div style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:2,marginBottom:12}}>⚡ LIVE WORLD NEWS</div>
+                    {(result.news||[]).map((n,i)=>(
+                      <div key={i} style={{borderBottom:`1px solid ${BRD}`,paddingBottom:10,marginBottom:10}}>
+                        <div style={{display:"flex",gap:7,alignItems:"flex-start"}}>
+                          <Pill label={n.impact} color={n.impact==="HIGH"?RED:n.impact==="MEDIUM"?GLD:MUT}/>
+                          <div>
+                            <div style={{fontSize:11,color:"#d4d0f0",lineHeight:1.5,marginBottom:3}}>{n.headline}</div>
+                            <div style={{fontSize:10,color:GRN}}>→ {n.effect}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </Card>
+                  <Card>
+                    <div style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:2,marginBottom:12}}>📅 ECONOMIC CALENDAR</div>
+                    {(result.calendar||[]).map((e,i)=>(
+                      <div key={i} style={{display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${BRD}`,paddingBottom:8,marginBottom:8}}>
+                        <div style={{fontSize:9,color:MUT,minWidth:50,fontFamily:"Cinzel"}}>{e.time}</div>
+                        <Pill label={e.currency} color={ACC}/>
+                        <div style={{flex:1,fontSize:10,color:"#d4d0f0"}}>{e.event}</div>
+                        <Pill label={e.impact} color={e.impact==="HIGH"?RED:e.impact==="MED"||e.impact==="MEDIUM"?GLD:MUT}/>
+                      </div>
+                    ))}
+                  </Card>
+                </div>
+
+                {/* Verdict */}
+                <div style={{background:"linear-gradient(135deg,rgba(124,58,237,0.07),rgba(251,191,36,0.04))",border:`1px solid rgba(177,151,252,0.15)`,borderRadius:12,padding:"14px 18px",display:"flex",gap:12,alignItems:"center"}}>
+                  <div className="float" style={{fontSize:24,flexShrink:0}}>{moon.emoji}</div>
+                  <div>
+                    <div style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:3,marginBottom:5}}>COSMO FINAL VERDICT</div>
+                    <div style={{fontSize:11,color:"#d4d0f0",lineHeight:1.8}}>{result.verdict}</div>
+                  </div>
+                </div>
+                <div style={{fontSize:9,color:MUT,textAlign:"center"}}>⚠ For educational purposes only. Always manage your risk. The cosmos informs — you decide.</div>
+              </div>
+            )}
+
+            {!result&&!loading&&(
+              <div style={{textAlign:"center",padding:"60px 16px"}}>
+                <div className="float" style={{fontSize:64,marginBottom:16}}>🔮</div>
+                <div style={{fontFamily:"Cinzel",fontSize:22,fontWeight:700,background:"linear-gradient(135deg,#b197fc,#fbbf24)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:8}}>COSMO Awaits</div>
+                <div style={{fontSize:11,color:MUT,marginBottom:18}}>The AI oracle that combines live market data, technical analysis, world news and cosmic energy.</div>
+                <div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
+                  {[`${moon.emoji} ${moon.name}`,`${zodiac.e} ${zodiac.name}`,`№${num.num} ${num.name}`,session.name].map(t=>(
+                    <div key={t} style={{background:SURF,border:`1px solid ${BRD}`,borderRadius:7,padding:"6px 12px",fontSize:9,color:"#9090c0",fontFamily:"Cinzel"}}>{t}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB 1 — AI CHAT
+        ═══════════════════════════════════════════════════════════════════ */}
+        {tab===1&&(
+          <div className="up" style={{display:"flex",flexDirection:"column",height:"calc(100vh - 180px)"}}>
+            <div style={{marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontFamily:"Cinzel",fontSize:13,color:ACC,letterSpacing:3}}>CHAT WITH COSMO</div>
+                <div style={{fontSize:9,color:MUT,marginTop:2}}>Your AI trading mentor — asks questions, teaches, gives live analysis. Learns from your journal.</div>
+              </div>
+              <button onClick={()=>saveChat([])} style={{background:"transparent",border:`1px solid ${BRD}`,color:MUT,padding:"5px 12px",borderRadius:6,fontSize:9,fontFamily:"Cinzel"}}>CLEAR CHAT</button>
+            </div>
+
+            {/* Messages */}
+            <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:10,marginBottom:12,paddingRight:4}}>
+              {chatHistory.length===0&&(
+                <div style={{textAlign:"center",padding:"40px 16px"}}>
+                  <div style={{fontSize:40,marginBottom:12}}>💬</div>
+                  <div style={{fontFamily:"Cinzel",fontSize:14,color:ACC,marginBottom:8}}>Ask COSMO Anything</div>
+                  <div style={{fontSize:10,color:MUT,marginBottom:16}}>Your AI trading mentor knows technical analysis, fundamentals, cosmic influences, risk management and more.</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,maxWidth:500,margin:"0 auto"}}>
+                    {["What pairs are best to trade today?","Explain Moon Phase effects on markets","Should I enter EUR/USD right now?","How do I manage my risk properly?","What does Mercury Retrograde mean for trading?","Analyse my trading journal and give advice"].map(q=>(
+                      <button key={q} onClick={()=>{setChatInput(q);}} style={{background:SURF,border:`1px solid ${BRD}`,color:"#a4a0d0",padding:"8px 10px",borderRadius:7,fontSize:9,fontFamily:"Cinzel",textAlign:"left",lineHeight:1.4}}>{q}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {chatHistory.map((msg,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start"}}>
+                  <div style={{
+                    maxWidth:"80%",
+                    background:msg.role==="user"?"linear-gradient(135deg,rgba(124,58,237,0.2),rgba(168,85,247,0.15))":"rgba(13,11,26,0.8)",
+                    border:`1px solid ${msg.role==="user"?ACC+"33":BRD}`,
+                    borderRadius:msg.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",
+                    padding:"10px 14px",
+                  }}>
+                    {msg.role==="assistant"&&(
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:7}}>
+                        <div className="float" style={{fontSize:14}}>🔮</div>
+                        <span style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:2}}>COSMO</span>
+                      </div>
+                    )}
+                    <div style={{fontSize:11,color:msg.role==="user"?"#d4d0f0":"#c0bcdc",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{msg.content}</div>
+                  </div>
+                </div>
+              ))}
+              {chatLoading&&(
+                <div style={{display:"flex",justifyContent:"flex-start"}}>
+                  <div style={{background:SURF,border:`1px solid ${BRD}`,borderRadius:"12px 12px 12px 3px",padding:"10px 14px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                      <div className="float" style={{fontSize:12}}>🔮</div>
+                      <span style={{fontFamily:"Cinzel",fontSize:9,color:ACC}}>COSMO</span>
+                    </div>
+                    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                      {[0,0.2,0.4].map((d,i)=><div key={i} style={{width:6,height:6,borderRadius:"50%",background:ACC,animation:`pulse 1s ${d}s infinite`}}/>)}
+                      <span style={{fontSize:10,color:MUT,marginLeft:6}}>Scanning markets & cosmos...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef}/>
+            </div>
+
+            {/* Input */}
+            <div style={{display:"flex",gap:8}}>
+              <textarea
+                value={chatInput}
+                onChange={e=>setChatInput(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}}}
+                placeholder="Ask COSMO anything about trading, markets, cosmic energy... (Enter to send)"
+                style={{flex:1,background:SURF,border:`1px solid ${BRD}`,borderRadius:8,padding:"10px 14px",fontSize:11,color:"#e2e0ff",fontFamily:"monospace",resize:"none",height:44,lineHeight:1.5}}
+                rows={1}
+              />
+              <Btn onClick={sendChat} disabled={chatLoading||!chatInput.trim()} style={{padding:"10px 18px",height:44}}>
+                {chatLoading?"...":"SEND ✦"}
+              </Btn>
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB 2 — COSMIC
+        ═══════════════════════════════════════════════════════════════════ */}
+        {tab===2&&(
+          <div className="up" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+
+            <Card style={{border:`1px solid ${moon.color}30`,textAlign:"center"}}>
+              <div className="float" style={{fontSize:60,marginBottom:12}}>{moon.emoji}</div>
+              <div style={{fontFamily:"Cinzel",fontSize:18,fontWeight:700,color:moon.color,marginBottom:4}}>{moon.name}</div>
+              <div style={{fontSize:9,color:MUT,marginBottom:12}}>Illumination: {moon.ill}%</div>
+              <div style={{height:5,background:BRD,borderRadius:3,marginBottom:16}}>
+                <div style={{height:"100%",width:`${moon.ill}%`,background:moon.color,borderRadius:3,boxShadow:`0 0 8px ${moon.color}55`,transition:"width 1s ease"}}/>
+              </div>
+              <div style={{background:`${moon.color}0d`,border:`1px solid ${moon.color}25`,borderRadius:9,padding:14,textAlign:"left",marginBottom:10}}>
+                <div style={{fontFamily:"Cinzel",fontSize:9,color:moon.color,letterSpacing:2,marginBottom:7}}>{moon.energy}</div>
+                <div style={{fontSize:11,color:"#c4c0e0",lineHeight:1.6,marginBottom:7}}>{moon.bias}</div>
+                <div style={{fontSize:11,color:GLD,lineHeight:1.6}}>{moon.advice}</div>
+              </div>
+              <div style={{fontSize:10,color:MUT,lineHeight:1.6,textAlign:"left"}}>The Moon governs emotions, collective psychology and market liquidity cycles. Full Moon brings extreme volatility and reversals. New Moon starts fresh cycles. Waxing builds bullish energy. Waning builds bearish pressure.</div>
+            </Card>
+
+            <Card style={{border:"1px solid rgba(251,191,36,0.2)"}}>
+              <div style={{textAlign:"center",marginBottom:14}}>
+                <div className="float" style={{fontSize:52,marginBottom:8}}>{zodiac.e}</div>
+                <div style={{fontFamily:"Cinzel",fontSize:18,fontWeight:700,color:GLD}}>{zodiac.name}</div>
+                <div style={{fontSize:9,color:MUT}}>Ruled by {zodiac.planet} · {zodiac.el} Energy · {zodiac.bull?"Bullish":"Bearish"} Season</div>
+              </div>
+              <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:9,padding:12,marginBottom:12}}>
+                <div style={{fontSize:11,color:"#c4c0e0",lineHeight:1.6}}>{zodiac.effect}</div>
+              </div>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:8,color:MUT,fontFamily:"Cinzel",letterSpacing:2,marginBottom:7}}>FAVORED PAIRS THIS SEASON</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                  {zodiac.pairs.map(p=><Pill key={p} label={p} color={GLD}/>)}
+                </div>
+              </div>
+            </Card>
+
+            <Card style={{border:`1px solid ${num.color}20`}}>
+              <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:14}}>
+                <div style={{fontFamily:"Cinzel",fontSize:68,fontWeight:900,color:num.color,lineHeight:1,textShadow:`0 0 20px ${num.color}44`}}>{num.num}</div>
+                <div>
+                  <div style={{fontFamily:"Cinzel",fontSize:15,color:num.color,fontWeight:700}}>{num.name}</div>
+                  <div style={{fontSize:9,color:MUT,margin:"3px 0"}}>Universal Day Number</div>
+                  <Pill label={num.fav?"FAVORABLE DAY ✦":"CHALLENGING DAY ○"} color={num.fav?GRN:RED}/>
+                </div>
+              </div>
+              <div style={{background:`${num.color}0a`,border:`1px solid ${num.color}18`,borderRadius:9,padding:12,marginBottom:12}}>
+                <div style={{fontSize:11,color:"#c4c0e0",lineHeight:1.6}}>{num.market}</div>
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {Array.from({length:9},(_,i)=>i+1).map(n=>(
+                  <div key={n} style={{background:[1,2,3,6,7,8].includes(n)?"rgba(52,211,153,0.07)":"rgba(248,113,113,0.07)",border:`1px solid ${n===num.num?num.color:BRD}`,borderRadius:5,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Cinzel",fontWeight:700,color:n===num.num?num.color:[1,2,3,6,7,8].includes(n)?GRN:RED,fontSize:12}}>{n}</div>
+                ))}
+              </div>
+            </Card>
+
+            <Card>
+              <div style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:3,marginBottom:14}}>PLANETARY INFLUENCE</div>
+              {[
+                {name:"Mercury ☿",rx:mercuryRx,note:mercuryRx?"RETROGRADE — fakeouts, reversals, avoid new entries":"Direct — clear signals, good for trading"},
+                {name:"Venus ♀",rx:false,note:"Direct — gold & forex markets flow well"},
+                {name:"Mars ♂",rx:false,note:"Direct — strong momentum, breakouts reliable"},
+                {name:"Jupiter ♃",rx:false,note:"Direct — expansion energy, bull markets favored"},
+                {name:"Saturn ♄",rx:false,note:"Direct — clear structure, disciplined trends"},
+              ].map(p=>(
+                <div key={p.name} style={{background:BG,border:`1px solid ${p.rx?RED+"33":BRD}`,borderRadius:7,padding:"10px 12px",marginBottom:7,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div>
+                    <div style={{fontFamily:"Cinzel",fontSize:11,color:p.rx?RED:ACC,marginBottom:3}}>{p.name}</div>
+                    <div style={{fontSize:10,color:MUT}}>{p.note}</div>
+                  </div>
+                  <Pill label={p.rx?"Rx ℞":"DIRECT"} color={p.rx?RED:GRN}/>
+                </div>
+              ))}
+            </Card>
+
+            {/* Cosmic Score Full Width */}
+            <Card style={{gridColumn:"1/-1"}}>
+              <div style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:3,marginBottom:16}}>TODAY'S COSMIC TRADING SCORE</div>
+              <div style={{display:"flex",gap:20,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontFamily:"Cinzel",fontSize:60,fontWeight:900,color:cosmicScore>=70?GRN:cosmicScore>=50?GLD:RED,lineHeight:1}}>{cosmicScore}</div>
+                  <div style={{fontSize:9,color:MUT}}>out of 100</div>
+                </div>
+                <div style={{flex:1,minWidth:200}}>
+                  <div style={{height:7,background:BRD,borderRadius:4,marginBottom:8}}>
+                    <div style={{height:"100%",width:`${cosmicScore}%`,background:`linear-gradient(90deg,${cosmicScore>=70?GRN:cosmicScore>=50?GLD:RED}66,${cosmicScore>=70?GRN:cosmicScore>=50?GLD:RED})`,borderRadius:4,boxShadow:`0 0 10px ${GRN}33`,transition:"width 1s ease"}}/>
+                  </div>
+                  <div style={{fontFamily:"Cinzel",fontSize:13,color:cosmicScore>=70?GRN:cosmicScore>=50?GLD:RED}}>
+                    {cosmicScore>=80?"HIGHLY FAVORABLE — Trade with full confidence":cosmicScore>=60?"FAVORABLE — Normal position size":cosmicScore>=40?"NEUTRAL — Be selective, reduce size":"UNFAVORABLE — Skip today or very small size only"}
+                  </div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8}}>
+                {[
+                  {l:"Moon Phase",pass:moon.favorable,note:moon.name},
+                  {l:"Zodiac Season",pass:zodiac.bull,note:zodiac.name+(zodiac.bull?" bullish":" bearish")},
+                  {l:"Mercury",pass:!mercuryRx,note:mercuryRx?"RETROGRADE ⚠":"Direct ✓"},
+                  {l:"Numerology",pass:num.fav,note:`${num.num} — ${num.fav?"Favorable":"Challenging"}`},
+                  {l:"Session Active",pass:session.vol!=="LOW",note:session.name},
+                ].map(f=>(
+                  <div key={f.l} style={{background:BG,border:`1px solid ${f.pass?GRN:RED}18`,borderRadius:7,padding:"9px 11px"}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}>
+                      <span style={{color:f.pass?GRN:RED,fontSize:11}}>{f.pass?"✦":"○"}</span>
+                      <span style={{fontFamily:"Cinzel",fontSize:9,color:f.pass?"#e2e0ff":MUT}}>{f.l}</span>
+                    </div>
+                    <div style={{fontSize:9,color:MUT}}>{f.note}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB 3 — SCANNER
+        ═══════════════════════════════════════════════════════════════════ */}
+        {tab===3&&(
+          <div className="up">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div>
+                <div style={{fontFamily:"Cinzel",fontSize:13,color:ACC,letterSpacing:3}}>MULTI-PAIR COSMIC SCANNER</div>
+                <div style={{fontSize:9,color:MUT,marginTop:3}}>AI scans 8 pairs simultaneously — live news + cosmic alignment</div>
+              </div>
+              <Btn onClick={scan} disabled={scanning}>{scanning?"⟳ SCANNING ALL PAIRS...":"⬡ SCAN 8 PAIRS"}</Btn>
+            </div>
+            {scanResults.length>0&&(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(270px,1fr))",gap:12}}>
+                {scanResults.map((r,i)=>(
+                  <Card key={i} style={{border:`1px solid ${sc(r.signal)}30`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <div style={{fontFamily:"Cinzel",fontSize:14,fontWeight:700,color:ACC}}>{r.pair}</div>
+                      <div style={{fontFamily:"Cinzel",fontSize:14,fontWeight:900,color:sc(r.signal)}}>{r.signal}</div>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:7,fontSize:10}}>
+                      <span style={{color:MUT}}>~{r.price}</span>
+                      <span style={{color:sc(r.trend),fontFamily:"Cinzel",fontSize:9}}>{r.trend}</span>
+                    </div>
+                    <div style={{height:3,background:BRD,borderRadius:2,marginBottom:8}}>
+                      <div style={{height:"100%",width:`${r.confidence}%`,background:sc(r.signal),borderRadius:2}}/>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <span style={{fontSize:9,color:MUT}}>Confidence: <span style={{color:r.confidence>=70?GRN:r.confidence>=50?GLD:RED,fontFamily:"Cinzel"}}>{r.confidence}%</span></span>
+                      <Pill label={`✦ ${r.cosmic||r.cosmicAlignment}`} color={r.cosmic==="ALIGNED"||(r.cosmicAlignment==="ALIGNED")?GRN:r.cosmic==="MISALIGNED"||(r.cosmicAlignment==="MISALIGNED")?RED:GLD}/>
+                    </div>
+                    <div style={{fontSize:10,color:"#b4b0d0",lineHeight:1.5,borderTop:`1px solid ${BRD}`,paddingTop:8}}>{r.reason}</div>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {!scanResults.length&&!scanning&&(
+              <div style={{textAlign:"center",padding:"60px 16px"}}>
+                <div style={{fontSize:48,marginBottom:12}}>📡</div>
+                <div style={{fontFamily:"Cinzel",fontSize:13,color:MUT}}>Scanner standing by — 8 pairs ready to analyze</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB 4 — JOURNAL
+        ═══════════════════════════════════════════════════════════════════ */}
+        {tab===4&&(
+          <div className="up">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontFamily:"Cinzel",fontSize:13,color:ACC,letterSpacing:3}}>TRADE JOURNAL</div>
+              <Btn onClick={()=>setShowAdd(!showAdd)}>{showAdd?"✕ CANCEL":"+ LOG TRADE"}</Btn>
+            </div>
+
+            {showAdd&&(
+              <Card style={{border:`1px solid ${ACC}20`,marginBottom:14}}>
+                <div style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:2,marginBottom:14}}>NEW TRADE ENTRY</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:10}}>
+                  <div>
+                    <div style={{fontSize:8,color:MUT,marginBottom:4,fontFamily:"Cinzel"}}>PAIR</div>
+                    <select value={tradeForm.pair} onChange={e=>setTradeForm(p=>({...p,pair:e.target.value}))}
+                      style={{background:BG,border:`1px solid ${BRD}`,color:ACC,padding:"7px 10px",borderRadius:6,fontFamily:"monospace",fontSize:11,width:"100%",cursor:"pointer"}}>
+                      <option value="">Select...</option>
+                      {PAIRS.map(p=><option key={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:8,color:MUT,marginBottom:4,fontFamily:"Cinzel"}}>DIRECTION</div>
+                    <div style={{display:"flex",gap:5}}>
+                      {["BUY","SELL"].map(d=>(
+                        <button key={d} onClick={()=>setTradeForm(p=>({...p,direction:d}))}
+                          style={{flex:1,background:tradeForm.direction===d?(d==="BUY"?"rgba(52,211,153,0.12)":"rgba(248,113,113,0.12)"):BG,border:`1px solid ${tradeForm.direction===d?(d==="BUY"?GRN:RED):BRD}`,color:tradeForm.direction===d?(d==="BUY"?GRN:RED):MUT,padding:"7px",borderRadius:6,fontFamily:"Cinzel",fontSize:9}}>
+                          {d}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Inp label="ENTRY PRICE" k="entry" ph="1.08500" state={tradeForm} setState={setTradeForm}/>
+                  <Inp label="RESULT (pips)" k="result" ph="+50 or -30" state={tradeForm} setState={setTradeForm}/>
+                </div>
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:8,color:MUT,marginBottom:4,fontFamily:"Cinzel"}}>NOTES</div>
+                  <textarea value={tradeForm.note} onChange={e=>setTradeForm(p=>({...p,note:e.target.value}))}
+                    placeholder="What happened? Which cosmic factors? What did you learn?"
+                    style={{background:BG,border:`1px solid ${BRD}`,borderRadius:6,padding:"8px 10px",fontSize:11,width:"100%",height:56,resize:"vertical",color:"#e2e0ff",fontFamily:"monospace"}}/>
+                </div>
+                <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                  <Btn onClick={()=>{
+                    const t={...tradeForm,date:new Date().toISOString(),moon:moon.name,moonEmoji:moon.emoji,zodiac:zodiac.name,zodiacEmoji:zodiac.e,number:num.num,id:Date.now()};
+                    saveJournal([t,...journal]);
+                    setTradeForm({pair:"",direction:"BUY",entry:"",result:"",note:""});
+                    setShowAdd(false);
+                  }}>✦ SAVE TRADE</Btn>
+                  <div style={{fontSize:9,color:MUT,fontFamily:"Cinzel"}}>Auto-tagged: {moon.emoji} {moon.name} · {zodiac.e} {zodiac.name} · №{num.num}</div>
+                </div>
+              </Card>
+            )}
+
+            {/* Stats */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+              {[{l:"TOTAL",v:journal.length,c:ACC},{l:"WINS",v:wins,c:GRN},{l:"LOSSES",v:journal.length-wins,c:RED},{l:"WIN RATE",v:journal.length>0?wr+"%":"—",c:GLD}].map(s=>(
+                <Card key={s.l} style={{textAlign:"center",padding:"12px"}}>
+                  <div style={{fontSize:8,color:MUT,fontFamily:"Cinzel",letterSpacing:1}}>{s.l}</div>
+                  <div style={{fontFamily:"Cinzel",fontSize:22,fontWeight:700,color:s.c,marginTop:4}}>{s.v}</div>
+                </Card>
+              ))}
+            </div>
+
+            {journal.length===0?(
+              <div style={{textAlign:"center",padding:"50px 16px",color:MUT,fontFamily:"Cinzel",fontSize:12}}>No trades yet. The more you log, the smarter COSMO gets.</div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {journal.map(t=>{
+                  const res=parseFloat(t.result||0);
+                  return(
+                    <Card key={t.id} style={{border:`1px solid ${res>0?GRN:res<0?RED:BRD}18`,padding:"12px 16px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                        <div style={{display:"flex",gap:7,alignItems:"center"}}>
+                          <span style={{fontFamily:"Cinzel",fontSize:12,color:ACC,fontWeight:700}}>{t.pair}</span>
+                          <Pill label={t.direction} color={t.direction==="BUY"?GRN:RED}/>
+                          {t.entry&&<span style={{fontSize:9,color:MUT}}>@ {t.entry}</span>}
+                        </div>
+                        <div style={{display:"flex",gap:7,alignItems:"center"}}>
+                          <span style={{fontSize:9,color:MUT}}>{t.moonEmoji} {t.zodiacEmoji} №{t.number}</span>
+                          {t.result&&<span style={{fontFamily:"Cinzel",fontSize:12,color:res>0?GRN:RED,fontWeight:700}}>{res>0?"+":""}{t.result} pips</span>}
+                        </div>
+                      </div>
+                      {t.note&&<div style={{fontSize:10,color:"#b4b0d0",lineHeight:1.5,marginBottom:3}}>{t.note}</div>}
+                      <div style={{fontSize:8,color:MUT}}>{new Date(t.date).toLocaleString()}</div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB 5 — CALCULATOR
+        ═══════════════════════════════════════════════════════════════════ */}
+        {tab===5&&(
+          <div className="up" style={{maxWidth:660,margin:"0 auto"}}>
+            <Card>
+              <div style={{fontFamily:"Cinzel",fontSize:12,color:ACC,letterSpacing:3,marginBottom:18}}>✦ POSITION SIZE CALCULATOR</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+                <Inp label="ACCOUNT BALANCE ($)" k="balance" ph="10000" state={calcForm} setState={setCalcForm}/>
+                <Inp label="RISK % PER TRADE" k="risk" ph="1" state={calcForm} setState={setCalcForm}/>
+                <Inp label="ENTRY PRICE" k="entry" ph="1.08500" state={calcForm} setState={setCalcForm}/>
+                <Inp label="STOP LOSS PRICE" k="sl" ph="1.08200" state={calcForm} setState={setCalcForm}/>
+                <Inp label="TAKE PROFIT PRICE" k="tp" ph="1.09200" state={calcForm} setState={setCalcForm}/>
+              </div>
+              {pos&&(
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:16}}>
+                  {[{l:"RISK AMOUNT",v:"$"+pos.riskAmt,c:RED},{l:"SL DISTANCE",v:pos.slDist,c:GLD},{l:"LOT SIZE",v:pos.lots,c:GRN},{l:"R:R RATIO",v:"1:"+pos.rr,c:ACC},{l:"POTENTIAL PROFIT",v:"$"+pos.potentialProfit,c:"#6ee7b7"}].map(s=>(
+                    <div key={s.l} style={{background:BG,border:`1px solid ${BRD}`,borderRadius:8,padding:"11px",textAlign:"center"}}>
+                      <div style={{fontSize:8,color:MUT,fontFamily:"Cinzel",letterSpacing:1}}>{s.l}</div>
+                      <div style={{fontFamily:"Cinzel",fontSize:16,fontWeight:700,color:s.c,marginTop:5}}>{s.v}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{background:"rgba(177,151,252,0.04)",border:`1px solid ${ACC}15`,borderRadius:9,padding:14}}>
+                <div style={{fontFamily:"Cinzel",fontSize:9,color:ACC,letterSpacing:2,marginBottom:9}}>✦ COSMO RISK GUIDANCE TODAY</div>
+                <div style={{fontSize:11,color:"#c4c0e0",lineHeight:1.6,marginBottom:7}}>{moon.advice}</div>
+                <div style={{fontSize:11,color:num.color,lineHeight:1.6,marginBottom:10}}>Number {num.num} Day: {num.market}</div>
+                <div style={{padding:"8px 12px",background:cosmicScore>=70?"rgba(52,211,153,0.07)":"rgba(248,113,113,0.07)",borderRadius:6,fontSize:11,color:cosmicScore>=70?GRN:RED,fontFamily:"Cinzel"}}>
+                  Cosmic Score {cosmicScore}% — {cosmicScore>=70?"Good today. Use normal position size.":cosmicScore>=50?"Moderate. Consider 0.5× size.":"⚠️ Poor alignment. 0.25× size or skip."}
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+      </main>
+    </div>
+  );
+}
